@@ -1,0 +1,519 @@
+---
+title: "Life Expectancy Analysis"
+author: "Kapaeloa Aki"
+date: "2025-05-6"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(car)
+library(jtools)
+library(ggplot2)
+library(dplyr)
+library(ggpubr)
+library(tidyverse)
+library(lubridate)
+library(gridExtra)
+library(GGally)
+library(scatterplot3d)
+library(pscl)
+library(reshape)
+library(plotly)
+```
+
+
+<span style="color: #8B4513; font-size: 32px;">1. Dataset Import and Preparation</span>
+
+
+Link: https://www.kaggle.com/datasets/kumarajarshi/life-expectancy-who/data
+
+This dataset was downloaded from the Kaggle. It examines factors influencing life expectancy across 193 countries from 2000 to 2015. It includes demographic, economic, and health-related data from sources like the World Health Organization (WHO) and the United Nations (UN), providing insights into global health and development.
+
+
+**Variables:**
+
+- Country: Name of the country
+
+- Year: The year the data was recorded
+
+- **Status:** Indicates whether the country is Developed or Developing
+
+- **Life expectancy:** Expected number of years a newborn is likely to live (Target Variable)
+
+- Adult Mortality: Adult mortality rates of both sexes (probability of dying between 15 and 60 years per 1000 population)
+
+- Infant deaths: Total number of infant deaths
+
+- Alcohol: recorded per capita (15+) consumption (in litres of pure alcohol)
+
+- Under-five deaths: Total number of deaths of children under five
+
+- Hepatitis B: Hepatitis B (HepB) immunization coverage among 1-year-olds (%)
+
+- Measles: Total number of reported measles cases
+
+- Polio: Polio (Pol3) immunization coverage among 1-year-olds (%)
+
+- Diphtheria: Diphtheria tetanus toxoid and pertussis (DTP3) immunization coverage among 1-year-olds (%)
+
+- HIV/AIDS: Deaths per 1000 live births due to HIV/AIDS (ages 0-4 years)
+
+- **BMI:** Average Body Mass Index of the entire population
+
+- Thinness 1-19 years: Prevalence of thinness among children and adolescents (ages 1-19 years) (%)
+
+- Thinness 5-9 years: Prevalence of thinness among children (ages 5-9 years) (%)
+
+- GDP: Gross Domestic Product per capita (in USD)
+
+- **Income composition of resources:** Human Development Index in terms of income composition of resources (index ranging from 0 to 1)
+
+- Percentage expenditure: Health expenditure in absolute terms (possibly dollars per capita) (Note: Incorrectly labeled in the dataset as "percentage of GDP per capita")
+
+- Total expenditure: General government expenditure on health as a percentage of total government expenditure (%)
+
+- **Schooling:** Number of years of schooling 
+
+
+#### Load the Data
+```{r, warning = FALSE, results='hide'}
+
+df <- read_csv("Life Expectancy Data.csv")
+
+str(df)
+
+#Check for and remove N/A values
+colSums(is.na(df))
+df <- na.omit(df)
+       
+#Consistent renaming of variables
+df <- df %>%
+  rename_with(~ str_replace_all(tolower(.), " ", "_"))
+
+df <- rename(df, ICOR = income_composition_of_resources)
+
+
+#Create new binary variable for status
+df <- df %>%
+  mutate(status_binary = if_else(status == "Developing", 1, 0))
+                                                      
+str(df)
+```
+
+---
+
+<span style="color: #8B4513; font-size: 32px;">2.	Data Exploration & Summary Statistics</span>
+
+#### Understanding distribution
+
+Density plots
+```{r, warning = FALSE}
+density1 <- ggplot(df, aes(x = life_expectancy)) +
+  geom_density(fill = "#8B4513")
+
+density2 <- ggplot(df, aes(x = ICOR)) +
+  geom_density(fill = "#FED789FF")
+
+density3 <- ggplot(df, aes(x = hepatitis_b)) +
+  geom_density(fill = "#556B2F")
+
+density4 <- ggplot(df, aes(x = bmi)) +
+  geom_density(fill = "#8B4513")
+
+density5 <- ggplot(df, aes(x = schooling)) +
+  geom_density(fill = "#FED789FF") 
+
+density6 <- ggplot(df, aes(x = total_expenditure)) +
+  geom_density(fill = "#556B2F")
+
+grid.arrange(arrangeGrob(density1, density2, density3, ncol=3), arrangeGrob(density4, density5, density6, ncol=3), nrow=2)
+
+```
+
+- Life expectancy: Slightly left-skewed indicating most countries have a life expectancy of 75.
+
+- ICOR: Shows a right-skew indicating countries are on the higher end of the ICOR.
+
+- Hepatitis_b: Left-skewed could indicate that a large portion of countries have a relatively low alcohol consumption
+
+- BMI: Bimodal distribution showing two "peaks" across countries.
+
+- Schooling: A roughly symmetrical and bell-shaped distribution at around 12 years.
+
+- Total Expenditure: Rougly bell-shaped distribution shows that a majority of governments dedicate around 6% of their expenditure towards health.
+
+
+Box Plots
+```{r}
+box1 <- ggplot(df, aes(x = life_expectancy)) +
+  geom_boxplot(fill = "#8B4513")
+
+box2 <- ggplot(df, aes(x = ICOR)) +
+  geom_boxplot(fill = "#FED789FF")
+
+box3 <- ggplot(df, aes(x = hepatitis_b)) +
+  geom_boxplot(fill = "#556B2F")
+
+box4 <- ggplot(df, aes(x = bmi)) +
+  geom_boxplot(fill = "#8B4513")
+
+box5 <- ggplot(df, aes(x = schooling)) +
+  geom_boxplot(fill = "#FED789FF")
+
+box6 <- ggplot(df, aes(x = total_expenditure)) +
+  geom_boxplot(fill = "#556B2F")
+
+
+grid.arrange(arrangeGrob(box1, box2, box3, ncol=3), arrangeGrob(box4, box5, box6, ncol=3), nrow=2)
+
+```
+
+
+
+Compare relationships between variables with heatmap
+```{r}
+
+numerical_vars <- df %>%
+  select(where(is.numeric))
+
+correlation_matrix <- cor(numerical_vars)
+melted_corr <- melt(correlation_matrix)
+colnames(melted_corr) <- c("Var1", "Var2", "Corr.")
+
+ggplot(melted_corr, aes(Var1, Var2, fill = Corr.)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "#556B2F", mid = "#F5DEB3", high = "#8B4513", midpoint = 0) +
+  theme_minimal() +
+  labs(title = "Correlation Heatmap",
+       x = "Variables", y = "Variables", fill = "Correlation") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate labels 45 degrees
+
+
+```
+
+
+
+#### Descriptive Statistics
+```{r}
+
+sd <- sapply(numerical_vars, sd)
+numerical_summary <- summary(numerical_vars)
+full_summary <- rbind(numerical_summary, sd)
+full_summary
+
+```
+
+
+#### Exploring More
+```{r, warning=FALSE}
+#Indicates that higher income composition is linked to developed countries
+ggplot(df, aes(x = ICOR)) +
+  facet_wrap(~status) +
+  geom_density(fill = "#556B2F") 
+
+#Highlights nutritional disparities, and that thinner populations are more comon in developing nations
+ggplot(df, aes(x = `thinness__1-19_years`)) +
+  facet_wrap(~status) +
+  geom_density(fill = "#8B4513") 
+
+#Confirms that life expectancy tends to be higher in developed countries 
+ggplot(df, aes(x = life_expectancy)) +
+  facet_wrap(~status) +
+  geom_density(fill = "#556B2F") 
+
+#Examines whether higher vaccination rates of hepatitis b is associated with more developed countries
+ggplot(df, aes(x = hepatitis_b)) +
+  facet_wrap(~status) +
+  geom_density(fill = "#556B2F") 
+
+#Shows some fluctuating in life expectancy over time
+ggplot(df, aes(x = year, y = life_expectancy)) +
+  geom_point(color = "#8B4513")
+
+#Shows developed countries has more schooling and life expectancy throughout the years.
+ggplot(df, aes(x = schooling, y = life_expectancy, fill = status)) +
+  geom_boxplot() +
+  facet_wrap(~ year) +
+  scale_fill_manual(values = c("Developed"="#FED789FF", "Developing"="#556B2F")) +
+  labs(title = "Life Expectancy by Schooling", x = "Schooling", y = "Life Expectancy") +
+  theme_minimal()
+
+```
+
+All of these visualizations provide valuable insight into the dataset.  It confirms that developed countries tend to have a higher life expectancy and better health indicators.  Shows that life expectancy tends to increase over time. 
+
+
+
+---
+
+<span style="color: #8B4513; font-size: 32px;">Research Questions & Statistical Modeling</span>
+
+
+## Question 1 (Multiple Linear Regression): How well does schooling, BMI, and ICOR(income composition of resources) predict the life expectancy of a country?
+**Why it matters:** This questions explores the broader factors that can influence life expectancy across different countries.  Education plays a crucial role in promoting better decision-making and financial stability, while BMI serves as a key health metric reflecting nutritional and disease risks.  ICOR helps reflects the economic structure of a country. Understanding how these variables influence longevity can provide valuable insights for increased longevity.
+
+
+- **Predictor Variables:** Schooling (years), BMI, and ICOR
+- **Response Variable:** Life Expectancy
+- **Hypothesis:** 
+    - **H0: β_schooling = 0, β_ICOR = 0, and β_bmi = 0** None of the predictors have a linear relationship with the response variable.
+    - **Ha: β_schooling ≠ 0, β_ICOR ≠ 0, or β_bmi ≠ 0(or all)**. At least one predictor has a linear relationship with the response variable.
+
+
+```{r}
+# convert to long format for plotting
+df_melted <- df %>%
+  pivot_longer(cols = c("schooling", "bmi","ICOR" ,"life_expectancy"), 
+               names_to = "variable", values_to = "value")
+
+# visualize density curves (distribution shape)
+ggplot(df_melted, aes(x = value, fill = variable)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~variable, scales = "free") +
+  scale_fill_manual(values = c("#FED789FF","#556B2F","#8B4513","#6A7C7D")) +
+  theme_minimal()
+```
+
+- The BMI has a bimodial distribution with peaks at 20 and around 55.  To preface a healthy BMI is between 18.5 and 24.9.  Therefore, amongst the countries analyzed a majority have either a healthy BMI or an obese one.
+- The life expectancy is slightly left skewed, peaking at around 71 years old.
+- The schooling is the most normally distributed and has a better bell-shape, peaking at around 12 years of schooling.
+- ICOR is left skewed with bimodal distribution, peaking at around 0.45 and 0.7.
+
+
+Explore potential linear relationships through scatter plots
+```{r}
+ggplot(df, aes(x = schooling, y = life_expectancy)) +
+  geom_point(color = "#556B2F")
+
+ggplot(df, aes(x = bmi, y = life_expectancy)) +
+  geom_point(color = "#8B4513") 
+
+ggplot(df, aes(x = ICOR, y = life_expectancy)) +
+  geom_point(color = "#6A7C7D") 
+```
+
+
+```{r}
+model <- lm(life_expectancy ~ schooling + bmi + ICOR, data = df)
+summary(model)
+```
+
+**Interpret the summary results:**
+R-squared = 0.6056, meaning the model explains 60.56% of the variance in the data.
+
+adjusted R-squared = 0.6049, means that approximately 60.49% of the variability in life expectancy can be explained by the linear relationship with schooling, bmi, and income composition of resources, while accounting for model complexity.
+
+p-values < 2.2e-16, means that it is extremely unlikely that the observed relationship is due to chance. In other words, the model is highly statistically significant.
+
+Intercept: p-value < 2e-16 indicates that the intercept is statistically significant.
+
+schooling estimates = 1.121836, p-value < 2e-16 This means that for every one-unit increase in schooling, the life expectancy is predicted to increase by 1.121836 years, holding the other variables constant. The small p-value, indicates that schooling is a statistically significant predictor.
+
+bmi estimates = 0.071637, p-value < 2e-16 This means that for every one-unit increase in bmi, the life expectancy variable is predicted to increase by 0.071637 years, holding the other variables constant. The small p-value, indicating that bmi is statistically significant.
+
+ICOR estimates = 17.258779, p-value < 2e-16 This means that for every one-unit increase in ICOR, the life expectancy is predicted to increase by 17.258779 years, holding the other variables constant. The small p-value, indicates that ICOR is a statistically significant predictor.
+
+
+## Diagnostic plots and assumption checks
+
+### Checking for Normally Distributed Residuals
+```{r}
+plot(model, which = 2, col = "#8B4513")
+hist(residuals(model), col = "#8B4513")
+```
+
+**QQ-plot:**The QQ-plot shows that it is not completely normally distributed as the points do not fall approximately along the straight diagonal line.  The deviations from the line indicates that it departs from normality and suggests some skewness.
+
+**Histogram of residuals:** The histogram of residuals shows the distribution of the difference between the observed nd predicted values of the response variable.  This visualization shows that it is bell-shaped, but not completely symmetrical.
+
+
+### Checking for Homoscedasticity
+```{r}
+plot(model, which = 3, col = "#556B2F")
+```
+
+**Scale-Location Plot:** This plot is used to check the assumption of homoscedasticity in linear regression.  The points seem to be randomly scattered around a horizontal line, forming a roughly rectangular band, with some points gravitating towards the centered.  Since there is no clear pattern, it suggests homoscedasticity, meaning the variance of the residuals is constant
+
+
+### Checking for Multicollinearity
+```{r}
+vif(model)
+```
+
+**VIF:** The variance inflation factor is a measure of multicollinearity in a multiple regression model.  Multicollinearity occurs when the predictor variables are highly correlated.  The value indicates a moderately low multicollineariy, meaning they all contribute independently to explaining life expectancy.
+
+
+## Visualizations
+
+### 3D Scatterplots
+```{r}
+plot_ly(df, x = ~schooling, y = ~bmi, z = ~life_expectancy, 
+               type = "scatter3d", mode = "markers",
+               marker = list(color = ~life_expectancy, 
+                             colorscale = list(c(0, "#556B2F"),
+                                               c(0.5, "#F5DEB3"), 
+                                               c(1, "#8B4513")),size = 5))
+
+plot_ly(df, x = ~schooling, y = ~ICOR, z = ~life_expectancy, 
+               type = "scatter3d", mode = "markers",
+               marker = list(color = ~life_expectancy, 
+                             colorscale = list(c(0, "#556B2F"),
+                                               c(0.5, "#F5DEB3"), 
+                                               c(1, "#8B4513")),size = 5))
+
+plot_ly(df, x = ~bmi, y = ~ICOR, z = ~life_expectancy, 
+               type = "scatter3d", mode = "markers",
+               marker = list(color = ~life_expectancy, 
+                             colorscale = list(c(0, "#556B2F"),
+                                               c(0.5, "#F5DEB3"), 
+                                               c(1, "#8B4513")),size = 5))
+
+```
+
+
+### Forest plot
+```{r, warning=FALSE, message=FALSE}
+plot_summs(model, scale = TRUE) 
+```
+
+**Forest Plot:** The forest plots shows the estimates and confidence levels of each predictor all in this figure.  The ICOR variable is farthest from zero, indicating that it has a stronger effect on the response variable.  Since all the confidence intervals do not cross zero, they are all statistically significant, and have a positive effect.  
+
+
+### Final conclusion
+- All variables significantly impact life expectancy
+- The coefficients for both variables indicate that it increases life expectancy.
+- The R-squared (0.6056) means that a good amount of variance in life expectancy is explained by the predictors, suggesting a **strong model**.
+- The low p-values (<2.2e-16) indicates that they are **highly significant**.
+- This is a **good model** because it is informative and statistically significant.  It could be possibly be improved with more predictors.
+- The model did answer the research question showing that the model successfully shows that schooling, BMI, and influences expectancy.  ICOR appears to be the more dominant predictor, suggesting that economic efficiency plays a vital role in a country's life expectancy.  Education also plays an important role, while BMI contributes a bit as well.
+
+
+
+
+
+## Question 2 (Logistic Regression): To what extent does life expectancy predict the likelihood of a countries status being developed or developing? 
+**Why it matters:** Understanding how life expectancy influences whether a country is classified as developed or developing provides insight into human well-being in countries.  The development of a country is often associated with various factors like economics, social, and more, but I wanted to see how good of an indicator health progress is of development.
+
+- **Predictor Variable:** life expectancy
+- **Response Variable:** Status (developing or developed)
+- **Hypothesis:** 
+    - **H0:** Predictor variable does not significantly predict the response variable
+    - **Ha:**. Predictor variable significantly predicts the response variable.
+
+
+### Scatterplot with geom_jitter
+```{r}
+ggplot(df, aes(x = life_expectancy, y = status)) +
+  geom_jitter(height = .05, alpha = .3)
+```
+
+I see a negative relationship, where the lower the life expectancy, the more likely it is to be a developing country.  Or in other words, it is a logistic regression type of relationship, as higher life expectancy values are developed, while a lower life expectancy is most likely to be still developing.
+
+
+### Fit a logistic regression
+```{r}
+mylogit <- glm(status_binary ~ life_expectancy, data = df, family = "binomial")
+summary(mylogit)
+```
+**Interpretation:**
+
+- **life expectancy coefficient:** -0.33186, meaning that for each one-unit increase in life expectancy, the log-odds of status decreases by 0.33186. 
+  
+- The life expectancy has a p-value lower than 2e-16 meaning that it is statistically significant.
+
+- **Residual Deviance:** 871, showing a significant reduction from null deviance (1375.4).  Shows a significant improvement in the model.
+
+
+### Compute odds ratio
+```{r}
+exp(coef(mylogit))
+```
+
+**Interpretation:**
+
+- **Intercept:** 298867466603.1391602, baseline odds when life expectancy is 0.  Not really meaningful.
+
+- **Life Expectancy:** 0.7175875, a one-unit increase in life expectancy multiplies the odds of status being developed decreases by approximately 0.7176.  This suggests that a higher life expectancy is associated with a lower likelihood of being in the developing category.
+
+
+### Compute McFadden's pseudo R²
+```{r}
+pR2(mylogit)
+```
+
+**Interpretation:**
+
+- **llhNull (null log-likelihood):** -687.7, likelihood of a model with no predictors
+
+- **llh (log-likelihood):** -435.5, measures how well the model explains the observed data.  Since, this value is higher it means the model fits the data better from the null model.
+
+- **G2 (deviance reduction):** 504.4, how much better the model does at reducing deviance.  Since, it is a large value it suggests that the model performs significantly better than the null.
+
+- **McFadden R^2:** 0.3667286, meaning the model explains about 36.67% of the variability in the log-likelihood compared to the null model.  This suggests that the model does a moderately good job at explaining the outcome (status).
+
+- **r2CU:** 0.4658, shows how much variance in country status is explained by life expectancy.  Suggests that 46% of the variance in country classification is explained by life expectancy alone.
+
+
+### Comparison to null model
+```{r}
+anova(mylogit, test = "Chisq")
+```
+
+**Interpretation:**
+
+- **Deviance:** how much better model is compared to null.  Life expectancy is strong predictor.
+
+- **p-value:** <2.2e-16 suggests that the life expectancy as a predictor significantly improves the model, indicating that life expectancy is an important variable for predicting the likelihood of status.
+
+
+### Logistic curve Visualization
+```{r}
+ggplot(df, aes(x = life_expectancy, y = status_binary)) +
+  geom_jitter(height = .05, alpha = .3) + 
+  geom_smooth(method = "glm", 
+      method.args = list(family = "binomial"), se = FALSE)
+```
+
+The S-curve (sigmoid) represents the probability of being developed as a function of life expectancy. As life expectancy increases, the probability of status decreases in a non-linear way, leveling off at the extremes (low and high ICOR).
+
+
+### Predicting Probabilities
+After fitting the logistic regression model, use it to predict the probability of status for any life expectancy value.
+
+```{r, warning=FALSE}
+# Create a new data frame with a smooth sequence of alcohol values
+newdata <- data.frame(life_expectancy = seq(min(df$life_expectancy), max(df$life_expectancy), length.out = 100))
+
+# Predict probabilities and standard errors on the link (log-odds) scale
+preds <- predict(mylogit, newdata = newdata, type = "link", se.fit = TRUE)
+
+# calculate the 95% confidence intervals for the predicted probabilities,
+newdata$fit <- plogis(preds$fit)  # predicted probabilities
+newdata$lower <- plogis(preds$fit - 1.96 * preds$se.fit)  # lower CI
+newdata$upper <- plogis(preds$fit + 1.96 * preds$se.fit)  # upper CI
+
+# Plot predicted probabilities with confidence interval ribbon
+ggplot(newdata, aes(x = life_expectancy, y = fit)) +
+  geom_line(color = "blue", size = 1) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, fill = "blue") +
+  labs(title = "Predicted Probability of Status with 95% Confidence Interval",
+    x = "Life Expectancy", y = "Probability of Status") +
+  theme_minimal()
+
+```
+
+The curve shows how the predicted probability of status changes as the life expectancy increases. As life expectancy increases, the probability of status typically decreases.  The shaded area represents the 95% confidence interval around the predicted probabilities.  It is more precise closer to 1 or developing countries, and less confident towards developed countries.  This could be due with the lack of data points for developed countries. 
+
+
+### Final Conclusions
+Life expectancy is a highly significant predictor of status. 
+
+ - Due to the coefficient (-0.33186) there is a **strong negative relationship** suggesting that a higher life expectancy value means that their is a strong likelihood of status being developed (0).
+ 
+ - The low p-value (<2.2e-16) confirms that life expectancy is not a random factor, but a **significant predictor** in a country's status.
+ 
+- This is a **good model** because it explains a good amount of variation.  However, it only includes one predictor, so another variable like an economic indicator could improve the predictions.
+
+- The model **answers my research question** revealing that life expectancy is in fact a strong predictor of whether a country is classified as developed or developing.  
+
